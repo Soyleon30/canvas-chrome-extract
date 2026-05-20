@@ -9,7 +9,7 @@
   <body>
     <header class="header">
       <div>
-        <h1>Canvas 图表导出</h1>
+        <h1 id="appTitle">Canvas 图表导出</h1>
         <p id="pageInfo">等待扫描当前页面</p>
       </div>
       <button id="refreshButton" class="iconButton" type="button" title="重新扫描" aria-label="重新扫描">
@@ -20,7 +20,7 @@
     <main>
       <section class="toolbar">
         <button id="downloadAllButton" type="button" disabled>下载全部</button>
-        <button id="copyReportButton" type="button" disabled>复制报告</button>
+        <button id="copyReportButton" type="button" disabled hidden>复制报告</button>
       </section>
 
       <section class="modeBar" aria-label="导出背景">
@@ -37,6 +37,14 @@
           <input id="backgroundColorInput" type="color" value="#0a0d19" aria-label="背景色">
           <input id="backgroundColorText" type="text" value="#0a0d19" inputmode="text" aria-label="背景色代码">
         </label>
+      </section>
+
+      <section class="selectorBar" aria-label="文件名前缀路径">
+        <label class="selectorToggle">
+          <input id="filenamePrefixEnabled" type="checkbox" checked>
+          <span>写入文件名前缀</span>
+        </label>
+        <input id="filenameSelectorInput" type="text" value=".newKpi2.col .title span.text-blue" spellcheck="false" aria-label="文件名前缀路径">
       </section>
 
       <section id="status" class="status" role="status">正在扫描...</section>

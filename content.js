@@ -21,7 +21,8 @@
     const requestedColor = request && request.backgroundColor;
     return {
       backgroundMode: isTransparent ? "transparent" : "dark",
-      backgroundColor: normalizeColor(requestedColor)
+      backgroundColor: normalizeColor(requestedColor),
+      filenameSelectors: normalizeSelectorList(request && request.filenameSelectors, request && request.filenamePrefixEnabled !== false)
     };
   }
 
@@ -29,8 +30,18 @@
     return /^#[0-9a-fA-F]{6}$/.test(String(value || "")) ? String(value).toLowerCase() : "#0a0d19";
   }
 
+  function normalizeSelectorList(value, isEnabled) {
+    if (!isEnabled) {
+      return [];
+    }
+
+    const raw = Array.isArray(value) ? value.join("；") : String(value || ".newKpi2.col .title span.text-blue");
+    const selectors = raw.split(/[;；]/).map((item) => item.trim()).filter(Boolean);
+    return selectors.length ? selectors : [".newKpi2.col .title span.text-blue"];
+  }
+
   function collectCanvasInfo(options) {
-    const pageIp = getPageIpAddress();
+    const pagePrefix = getPageFilenamePrefix(options.filenameSelectors);
 
     return [...document.querySelectorAll("canvas")].map((canvas, index) => {
       const rect = canvas.getBoundingClientRect();
@@ -44,7 +55,8 @@
         displayHeight: Math.round(rect.height),
         visible: rect.width > 0 && rect.height > 0 && styles.display !== "none" && styles.visibility !== "hidden",
         selector: makeSelector(canvas),
-        ipAddress: pageIp,
+        filenamePrefix: pagePrefix,
+        ipAddress: pagePrefix,
         backgroundMode: options.backgroundMode,
         backgroundColor: options.backgroundColor,
         dataUrl: "",
@@ -118,11 +130,23 @@
     return output.toDataURL("image/png");
   }
 
-  function getPageIpAddress() {
-    const ipNode = document.querySelector(".newKpi2.col .title span.text-blue");
-    const rawText = ipNode ? ipNode.textContent.trim() : "";
-    const match = rawText.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/);
-    return match ? match[0] : rawText;
+  function getPageFilenamePrefix(selectors) {
+    for (const selector of selectors) {
+      try {
+        const node = document.querySelector(selector);
+        const rawText = node ? node.textContent.trim() : "";
+        if (!rawText) {
+          continue;
+        }
+
+        const ipMatch = rawText.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/);
+        return ipMatch ? ipMatch[0] : rawText;
+      } catch (error) {
+        continue;
+      }
+    }
+
+    return "";
   }
 
   function cssEscape(value) {

@@ -1,3 +1,4 @@
+const appTitle = document.getElementById("appTitle");
 const statusEl = document.getElementById("status");
 const pageInfoEl = document.getElementById("pageInfo");
 const canvasListEl = document.getElementById("canvasList");
@@ -6,13 +7,18 @@ const downloadAllButton = document.getElementById("downloadAllButton");
 const copyReportButton = document.getElementById("copyReportButton");
 const backgroundColorInput = document.getElementById("backgroundColorInput");
 const backgroundColorText = document.getElementById("backgroundColorText");
+const filenamePrefixEnabled = document.getElementById("filenamePrefixEnabled");
+const filenameSelectorInput = document.getElementById("filenameSelectorInput");
 const template = document.getElementById("canvasItemTemplate");
 
 let currentCanvases = [];
 let currentTabTitle = "page";
 let currentBackgroundColor = "#0a0d19";
+let currentFilenameSelectors = ".newKpi2.col .title span.text-blue";
+let isFilenamePrefixEnabled = true;
 
 document.addEventListener("DOMContentLoaded", scanCurrentTab);
+appTitle.addEventListener("dblclick", toggleReportButton);
 refreshButton.addEventListener("click", scanCurrentTab);
 downloadAllButton.addEventListener("click", downloadAll);
 copyReportButton.addEventListener("click", copyReport);
@@ -21,6 +27,19 @@ document.querySelectorAll("input[name='backgroundMode']").forEach((input) => {
 });
 backgroundColorInput.addEventListener("input", syncBackgroundColorFromPicker);
 backgroundColorText.addEventListener("change", syncBackgroundColorFromText);
+filenamePrefixEnabled.addEventListener("change", syncFilenamePrefixEnabled);
+filenameSelectorInput.addEventListener("change", syncFilenameSelectors);
+
+function toggleReportButton(event) {
+  if (!event.altKey) {
+    return;
+  }
+
+  copyReportButton.hidden = !copyReportButton.hidden;
+  if (!copyReportButton.hidden) {
+    copyReportButton.disabled = currentCanvases.length === 0;
+  }
+}
 
 async function scanCurrentTab() {
   setStatus("正在扫描...");
@@ -93,10 +112,12 @@ async function collectFromAllFrames(tabId, backgroundOptions) {
   const triggerFile = backgroundOptions.backgroundMode === "transparent" ? "scan-transparent.js" : "scan-dark.js";
   await chrome.scripting.executeScript({
     target: { tabId, allFrames: true },
-    func: (backgroundColor) => {
+    func: (backgroundColor, filenamePrefixEnabledValue, filenameSelectors) => {
       window.__canvasExtractorBackgroundColor = backgroundColor;
+      window.__canvasExtractorFilenamePrefixEnabled = filenamePrefixEnabledValue;
+      window.__canvasExtractorFilenameSelectors = filenameSelectors;
     },
-    args: [backgroundOptions.backgroundColor]
+    args: [backgroundOptions.backgroundColor, backgroundOptions.filenamePrefixEnabled, backgroundOptions.filenameSelectors]
   });
 
   await chrome.scripting.executeScript({
@@ -205,6 +226,7 @@ async function copyReport() {
     `display=${item.displayWidth}x${item.displayHeight}`,
     `visible=${item.visible}`,
     `exportable=${Boolean(item.dataUrl)}`,
+    item.filenamePrefix ? `filenamePrefix=${item.filenamePrefix}` : "",
     item.ipAddress ? `ip=${item.ipAddress}` : "",
     `frame=${item.frameId || 0}`,
     item.frameUrl ? `frameUrl=${item.frameUrl}` : "",
@@ -240,7 +262,9 @@ function getBackgroundOptions() {
   const checked = document.querySelector("input[name='backgroundMode']:checked");
   return {
     backgroundMode: checked ? checked.value : "dark",
-    backgroundColor: currentBackgroundColor
+    backgroundColor: currentBackgroundColor,
+    filenamePrefixEnabled: isFilenamePrefixEnabled,
+    filenameSelectors: isFilenamePrefixEnabled ? normalizeSelectorList(currentFilenameSelectors) : []
   };
 }
 
@@ -258,6 +282,26 @@ function setBackgroundColor(value) {
   currentBackgroundColor = normalizeColor(value);
   backgroundColorInput.value = currentBackgroundColor;
   backgroundColorText.value = currentBackgroundColor;
+}
+
+function syncFilenamePrefixEnabled() {
+  isFilenamePrefixEnabled = filenamePrefixEnabled.checked;
+  filenameSelectorInput.disabled = !isFilenamePrefixEnabled;
+  scanCurrentTab();
+}
+
+function syncFilenameSelectors() {
+  currentFilenameSelectors = normalizeSelectorList(filenameSelectorInput.value).join("；");
+  filenameSelectorInput.value = currentFilenameSelectors;
+  scanCurrentTab();
+}
+
+function normalizeSelectorList(value) {
+  const selectors = String(value || ".newKpi2.col .title span.text-blue")
+    .split(/[;；]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return selectors.length ? selectors : [".newKpi2.col .title span.text-blue"];
 }
 
 function normalizeColor(value) {
