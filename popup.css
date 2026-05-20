@@ -139,6 +139,47 @@ button:disabled {
   margin: 0;
 }
 
+.selectorBar {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.selectorBar label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.selectorToggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+}
+
+.selectorToggle input {
+  margin: 0;
+}
+
+.selectorBar input[type="text"] {
+  width: 100%;
+  height: 28px;
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid var(--strong-line);
+  border-radius: 5px;
+  color: var(--text);
+  font: 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.selectorBar input[type="text"]:disabled {
+  opacity: 0.55;
+}
+
 .toolbar button:first-child,
 .downloadButton {
   border-color: var(--accent);
