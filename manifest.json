@@ -1,0 +1,16 @@
+{
+  "manifest_version": 2,
+  "name": "Canvas 图表导出 MV2",
+  "description": "适用于旧版 Chromium 内核浏览器的 canvas 图表导出插件，兼容统信 UOS、银河麒麟上的 360 浏览器。",
+  "version": "1.1.0",
+  "browser_action": {
+    "default_title": "Canvas 图表导出",
+    "default_popup": "popup.html"
+  },
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "downloads",
+    "<all_urls>"
+  ]
+}
