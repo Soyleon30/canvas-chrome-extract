@@ -137,7 +137,8 @@ function renderCanvases() {
     title.textContent = item.name;
     badge.textContent = item.dataUrl ? "可导出" : "受限";
     badge.classList.toggle("isError", !item.dataUrl);
-    meta.textContent = `${item.width}x${item.height} 像素，页面显示 ${item.displayWidth}x${item.displayHeight}，frame ${item.frameId || 0}`;
+    const ipText = item.ipAddress ? `，IP ${item.ipAddress}` : "";
+    meta.textContent = `${item.width}x${item.height} 像素，页面显示 ${item.displayWidth}x${item.displayHeight}，frame ${item.frameId || 0}${ipText}`;
     selector.textContent = item.selector || "canvas";
 
     if (item.dataUrl) {
@@ -191,6 +192,7 @@ async function copyReport() {
     `display=${item.displayWidth}x${item.displayHeight}`,
     `visible=${item.visible}`,
     `exportable=${Boolean(item.dataUrl)}`,
+    item.ipAddress ? `ip=${item.ipAddress}` : "",
     `frame=${item.frameId || 0}`,
     item.frameUrl ? `frameUrl=${item.frameUrl}` : "",
     `selector=${item.selector}`,
@@ -204,8 +206,9 @@ async function copyReport() {
 function makeFilename(item) {
   const title = sanitizeFilename(currentTabTitle).slice(0, 70) || "page";
   const name = sanitizeFilename(item.name).slice(0, 40) || `canvas-${item.index + 1}`;
+  const ipPart = item.ipAddress ? `${sanitizeFilename(item.ipAddress)}-` : "";
   const mode = item.backgroundMode === "transparent" ? "transparent" : "dark";
-  return `canvas-extractor/${title}/${String(item.index + 1).padStart(2, "0")}-${name}-${mode}-${item.width}x${item.height}.png`;
+  return `canvas-extractor/${title}/${ipPart}${String(item.index + 1).padStart(2, "0")}-${name}-${mode}-${item.width}x${item.height}.png`;
 }
 
 function sanitizeFilename(value) {

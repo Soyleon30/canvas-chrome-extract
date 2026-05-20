@@ -14,6 +14,7 @@
 
 - 扫描当前页面所有 `canvas`
 - 显示预览、真实像素尺寸、页面显示尺寸和 CSS selector
+- 文件名自动包含 `.newKpi2.col .title span.text-blue` 中的 IP 地址
 - 单个下载 PNG，可选择 `#0a0d19` 深色背景或原始透明背景
 - 一键下载全部可导出的 canvas
 - 复制 canvas 报告，方便定位页面上的图表

@@ -17,6 +17,8 @@
   };
 
   function collectCanvasInfo(backgroundMode) {
+    const pageIp = getPageIpAddress();
+
     return [...document.querySelectorAll("canvas")].map((canvas, index) => {
       const rect = canvas.getBoundingClientRect();
       const styles = getComputedStyle(canvas);
@@ -29,6 +31,7 @@
         displayHeight: Math.round(rect.height),
         visible: rect.width > 0 && rect.height > 0 && styles.display !== "none" && styles.visibility !== "hidden",
         selector: makeSelector(canvas),
+        ipAddress: pageIp,
         backgroundMode,
         dataUrl: "",
         error: ""
@@ -99,6 +102,13 @@
     context.drawImage(canvas, 0, 0);
 
     return output.toDataURL("image/png");
+  }
+
+  function getPageIpAddress() {
+    const ipNode = document.querySelector(".newKpi2.col .title span.text-blue");
+    const rawText = ipNode ? ipNode.textContent.trim() : "";
+    const match = rawText.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/);
+    return match ? match[0] : rawText;
   }
 
   function cssEscape(value) {
