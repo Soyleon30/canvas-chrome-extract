@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Canvas Extractor",
+  "description": "Extract and download canvas images from the current page, including ECharts and v-chart render output.",
+  "version": "1.0.0",
+  "action": {
+    "default_title": "Canvas Extractor",
+    "default_popup": "popup.html"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "downloads"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ]
+}

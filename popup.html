@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Canvas Extractor</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <header class="header">
+      <div>
+        <h1>Canvas Extractor</h1>
+        <p id="pageInfo">等待扫描当前页面</p>
+      </div>
+      <button id="refreshButton" class="iconButton" type="button" title="重新扫描" aria-label="重新扫描">
+        <span aria-hidden="true">↻</span>
+      </button>
+    </header>
+
+    <main>
+      <section class="toolbar">
+        <button id="downloadAllButton" type="button" disabled>下载全部</button>
+        <button id="copyReportButton" type="button" disabled>复制报告</button>
+      </section>
+
+      <section class="modeBar" aria-label="导出背景">
+        <label>
+          <input type="radio" name="backgroundMode" value="dark" checked>
+          深色背景
+        </label>
+        <label>
+          <input type="radio" name="backgroundMode" value="transparent">
+          透明背景
+        </label>
+      </section>
+
+      <section id="status" class="status" role="status">正在扫描...</section>
+      <section id="canvasList" class="canvasList" aria-live="polite"></section>
+    </main>
+
+    <template id="canvasItemTemplate">
+      <article class="canvasItem">
+        <div class="previewWrap">
+          <img class="preview" alt="">
+          <div class="previewFallback">无法预览</div>
+        </div>
+        <div class="details">
+          <div class="itemTopline">
+            <strong class="itemTitle"></strong>
+            <span class="badge"></span>
+          </div>
+          <div class="meta"></div>
+          <div class="selector"></div>
+          <div class="error"></div>
+          <div class="actions">
+            <button class="downloadButton" type="button">下载 PNG</button>
+            <button class="copyButton" type="button">复制 data URL</button>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
