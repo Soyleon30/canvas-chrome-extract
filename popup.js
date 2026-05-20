@@ -4,10 +4,13 @@ const canvasListEl = document.getElementById("canvasList");
 const refreshButton = document.getElementById("refreshButton");
 const downloadAllButton = document.getElementById("downloadAllButton");
 const copyReportButton = document.getElementById("copyReportButton");
+const backgroundColorInput = document.getElementById("backgroundColorInput");
+const backgroundColorText = document.getElementById("backgroundColorText");
 const template = document.getElementById("canvasItemTemplate");
 
 let currentCanvases = [];
 let currentTabTitle = "page";
+let currentBackgroundColor = "#0a0d19";
 
 document.addEventListener("DOMContentLoaded", scanCurrentTab);
 refreshButton.addEventListener("click", scanCurrentTab);
@@ -16,6 +19,8 @@ copyReportButton.addEventListener("click", copyReport);
 document.querySelectorAll("input[name='backgroundMode']").forEach((input) => {
   input.addEventListener("change", scanCurrentTab);
 });
+backgroundColorInput.addEventListener("input", syncBackgroundColorFromPicker);
+backgroundColorText.addEventListener("change", syncBackgroundColorFromText);
 
 async function scanCurrentTab() {
   setStatus("正在扫描...");
@@ -33,7 +38,7 @@ async function scanCurrentTab() {
     currentTabTitle = tab.title || "page";
     pageInfoEl.textContent = trimText(tab.url || currentTabTitle, 58);
 
-    const result = await collectFromAllFrames(tab.id, getBackgroundMode());
+    const result = await collectFromAllFrames(tab.id, getBackgroundOptions());
     currentCanvases = result;
     renderCanvases();
   } catch (error) {
@@ -41,7 +46,7 @@ async function scanCurrentTab() {
   }
 }
 
-async function collectFromAllFrames(tabId, backgroundMode) {
+async function collectFromAllFrames(tabId, backgroundOptions) {
   const batches = [];
   const scanStartedAt = Date.now();
 
@@ -85,7 +90,15 @@ async function collectFromAllFrames(tabId, backgroundMode) {
     files: ["content.js"]
   });
 
-  const triggerFile = backgroundMode === "transparent" ? "scan-transparent.js" : "scan-dark.js";
+  const triggerFile = backgroundOptions.backgroundMode === "transparent" ? "scan-transparent.js" : "scan-dark.js";
+  await chrome.scripting.executeScript({
+    target: { tabId, allFrames: true },
+    func: (backgroundColor) => {
+      window.__canvasExtractorBackgroundColor = backgroundColor;
+    },
+    args: [backgroundOptions.backgroundColor]
+  });
+
   await chrome.scripting.executeScript({
     target: { tabId, allFrames: true },
     files: [triggerFile]
@@ -207,7 +220,7 @@ function makeFilename(item) {
   const title = sanitizeFilename(currentTabTitle).slice(0, 70) || "page";
   const name = sanitizeFilename(item.name).slice(0, 40) || `canvas-${item.index + 1}`;
   const ipPart = item.ipAddress ? `${sanitizeFilename(item.ipAddress)}-` : "";
-  const mode = item.backgroundMode === "transparent" ? "transparent" : "dark";
+  const mode = item.backgroundMode === "transparent" ? "transparent" : normalizeColor(item.backgroundColor).slice(1);
   return `canvas-extractor/${title}/${ipPart}${String(item.index + 1).padStart(2, "0")}-${name}-${mode}-${item.width}x${item.height}.png`;
 }
 
@@ -223,9 +236,32 @@ function setStatus(message, isError = false) {
   statusEl.classList.toggle("isError", isError);
 }
 
-function getBackgroundMode() {
+function getBackgroundOptions() {
   const checked = document.querySelector("input[name='backgroundMode']:checked");
-  return checked ? checked.value : "dark";
+  return {
+    backgroundMode: checked ? checked.value : "dark",
+    backgroundColor: currentBackgroundColor
+  };
+}
+
+function syncBackgroundColorFromPicker() {
+  setBackgroundColor(backgroundColorInput.value);
+  scanCurrentTab();
+}
+
+function syncBackgroundColorFromText() {
+  setBackgroundColor(backgroundColorText.value);
+  scanCurrentTab();
+}
+
+function setBackgroundColor(value) {
+  currentBackgroundColor = normalizeColor(value);
+  backgroundColorInput.value = currentBackgroundColor;
+  backgroundColorText.value = currentBackgroundColor;
+}
+
+function normalizeColor(value) {
+  return /^#[0-9a-fA-F]{6}$/.test(String(value || "")) ? String(value).toLowerCase() : "#0a0d19";
 }
 
 function trimText(value, maxLength) {

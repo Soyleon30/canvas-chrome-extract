@@ -1,24 +1,62 @@
-# Canvas Extractor
+# Canvas 图表导出
 
-一个可直接加载到 Chrome 的 Manifest V3 扩展，用于从当前页面抽取 canvas 并下载为 PNG。适合 ECharts、v-chart、Chart.js 等最终渲染到 canvas 的图表页面。
+Canvas 图表导出 是一个浏览器扩展，用于从当前网页中扫描、预览并导出 canvas 图表。它适合 ECharts、v-chart、Chart.js 以及其他最终渲染到 canvas 的监控图、趋势图、仪表盘图表。
 
-## 加载到 Chrome
+当前版本：1.1.0。插件界面与插件元信息已改为中文，并支持自定义导出背景色。
 
-1. 打开 `chrome://extensions/`
-2. 打开右上角“开发者模式”
-3. 点击“加载已解压的扩展程序”
-4. 选择本目录：`canvas-extractor-extension`
-5. 打开目标页面，等图表渲染完成后点击扩展图标
+## 适用场景
 
-## 功能
+- 从运维监控、报表系统、可视化大屏中批量导出 canvas 图表
+- 导出 ECharts、v-chart、Chart.js 等图表为 PNG
+- 为深色主题图表补一个固定背景色，避免透明 PNG 放到文档里看不清
+- 复制 canvas 扫描报告，用于定位页面中的图表元素和导出失败原因
 
-- 扫描当前页面所有 `canvas`
-- 显示预览、真实像素尺寸、页面显示尺寸和 CSS selector
-- 文件名自动包含 `.newKpi2.col .title span.text-blue` 中的 IP 地址
-- 单个下载 PNG，可选择 `#0a0d19` 深色背景或原始透明背景
-- 一键下载全部可导出的 canvas
-- 复制 canvas 报告，方便定位页面上的图表
+## 适用浏览器
 
-## 注意
+新版 Chrome / Edge 等支持 Manifest V3 的浏览器。
 
-如果 canvas 内使用了没有 CORS 授权的跨域图片，浏览器会阻止 `toDataURL()`，对应项会显示为“受限”。纯 ECharts/v-chart 图表通常可以正常导出。
+- Manifest V3 版本，使用 `chrome.scripting` 注入页面脚本。
+- 推荐用于新版 Chrome、Edge 或其他较新的 Chromium 浏览器。
+
+## 安装方式
+
+1. 打开浏览器的扩展管理页面。常见入口包括 `chrome://extensions/`、`se://extensions/`，或浏览器菜单中的“扩展程序”。
+2. 打开“开发者模式”。
+3. 点击“加载已解压的扩展程序”。
+4. 选择 `canvas-extractor-extension` 目录。
+5. 打开目标页面，等待图表渲染完成后点击工具栏里的“Canvas 图表导出”图标。
+
+## 使用说明
+
+1. 打开包含 canvas 图表的网页。
+2. 点击浏览器工具栏中的插件图标。插件会自动扫描当前标签页及其 frame 中的 canvas。
+3. 选择导出背景：
+   - “背景色”：把 canvas 合成到指定纯色背景上，默认颜色是 `#0a0d19`。
+   - “透明背景”：保留原始 canvas 的透明效果，不额外填充背景。
+4. 如需修改背景色，使用颜色选择器或直接输入 `#RRGGBB` 格式的颜色值。修改后插件会重新扫描并刷新预览。
+5. 在列表中查看每个 canvas 的预览、真实像素尺寸、页面显示尺寸、frame 编号和 CSS selector。
+6. 点击“下载 PNG”导出单个图表，或点击“下载全部”批量导出所有可读取的图表。
+7. 点击“复制报告”可复制扫描结果，包含尺寸、可导出状态、frame URL、selector 和错误信息。
+
+## 导出文件名
+
+导出的 PNG 会保存到 `canvas-extractor/页面标题/` 目录下。文件名包含序号、图表名称、背景模式或背景色、图片尺寸。
+
+如果页面中存在 `.newKpi2.col .title span.text-blue` 且文本里包含 IP 地址，插件会把该 IP 写入文件名前缀，方便区分不同主机的图表。
+
+## 功能列表
+
+- 扫描当前页面和子 frame 中的所有 `canvas`
+- 显示 canvas 预览、真实像素尺寸、页面显示尺寸和 CSS selector
+- 支持自定义背景色，默认 `#0a0d19`
+- 支持透明背景导出
+- 单个下载 PNG
+- 一键下载全部可导出的 PNG
+- 复制 canvas 扫描报告
+- 自动识别部分页面中的 IP 地址并写入文件名
+
+## 注意事项
+
+如果 canvas 内使用了没有 CORS 授权的跨域图片，浏览器会阻止 `toDataURL()`，对应项会显示为“受限”。这是浏览器安全策略，不是插件故障。纯 ECharts、v-chart、Chart.js 图表通常可以正常导出。
+
+如果页面图表是延迟渲染的，请等图表完全出现后再点击插件，或点击右上角“重新扫描”。

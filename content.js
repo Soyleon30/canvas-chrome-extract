@@ -5,9 +5,9 @@
 
   window.__canvasExtractorContentReady = true;
 
-  window.__canvasExtractorScan = (requestedMode) => {
-    const backgroundMode = requestedMode === "transparent" ? "transparent" : "dark";
-    const canvases = collectCanvasInfo(backgroundMode);
+  window.__canvasExtractorScan = (request) => {
+    const options = normalizeScanOptions(request);
+    const canvases = collectCanvasInfo(options);
 
     chrome.runtime.sendMessage({
       type: "CANVAS_EXTRACTOR_RESULT",
@@ -16,7 +16,20 @@
     });
   };
 
-  function collectCanvasInfo(backgroundMode) {
+  function normalizeScanOptions(request) {
+    const isTransparent = request === "transparent" || request && request.backgroundMode === "transparent";
+    const requestedColor = request && request.backgroundColor;
+    return {
+      backgroundMode: isTransparent ? "transparent" : "dark",
+      backgroundColor: normalizeColor(requestedColor)
+    };
+  }
+
+  function normalizeColor(value) {
+    return /^#[0-9a-fA-F]{6}$/.test(String(value || "")) ? String(value).toLowerCase() : "#0a0d19";
+  }
+
+  function collectCanvasInfo(options) {
     const pageIp = getPageIpAddress();
 
     return [...document.querySelectorAll("canvas")].map((canvas, index) => {
@@ -32,15 +45,16 @@
         visible: rect.width > 0 && rect.height > 0 && styles.display !== "none" && styles.visibility !== "hidden",
         selector: makeSelector(canvas),
         ipAddress: pageIp,
-        backgroundMode,
+        backgroundMode: options.backgroundMode,
+        backgroundColor: options.backgroundColor,
         dataUrl: "",
         error: ""
       };
 
       try {
-        info.dataUrl = backgroundMode === "transparent"
+        info.dataUrl = options.backgroundMode === "transparent"
           ? canvas.toDataURL("image/png")
-          : exportCanvasWithBackground(canvas, "#0a0d19");
+          : exportCanvasWithBackground(canvas, options.backgroundColor);
       } catch (error) {
         info.error = error && error.message ? error.message : String(error);
       }
