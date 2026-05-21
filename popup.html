@@ -24,18 +24,15 @@
       </section>
 
       <section class="modeBar" aria-label="导出背景">
-        <label>
+        <label class="backgroundChoice backgroundChoiceColor" title="选择导出 PNG 的背景色">
           <input type="radio" name="backgroundMode" value="dark" checked>
-          背景色
-        </label>
-        <label>
-          <input type="radio" name="backgroundMode" value="transparent">
-          透明背景
-        </label>
-        <label class="colorControl" title="选择导出 PNG 的背景色">
-          <span>颜色</span>
+          <span>背景色</span>
           <input id="backgroundColorInput" type="color" value="#0a0d19" aria-label="背景色">
-          <input id="backgroundColorText" type="text" value="#0a0d19" inputmode="text" aria-label="背景色代码">
+          <input id="backgroundColorText" type="text" value="#0a0d19" inputmode="text" aria-label="RGB 颜色代码">
+        </label>
+        <label class="backgroundChoice backgroundChoiceTransparent">
+          <input type="radio" name="backgroundMode" value="transparent">
+          <span>透明背景</span>
         </label>
       </section>
 
