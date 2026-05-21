@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Canvas 图表导出",
   "description": "从当前页面提取 canvas 图表并下载为 PNG，支持 ECharts、v-chart 等图表渲染结果。",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "action": {
     "default_title": "Canvas 图表导出",
     "default_popup": "popup.html"
@@ -10,7 +10,8 @@
   "permissions": [
     "activeTab",
     "scripting",
-    "downloads"
+    "downloads",
+    "storage"
   ],
   "host_permissions": [
     "<all_urls>"

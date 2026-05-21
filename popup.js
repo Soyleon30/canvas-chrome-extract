@@ -110,15 +110,7 @@ async function collectFromAllFrames(tabId, backgroundOptions) {
   });
 
   const triggerFile = backgroundOptions.backgroundMode === "transparent" ? "scan-transparent.js" : "scan-dark.js";
-  await chrome.scripting.executeScript({
-    target: { tabId, allFrames: true },
-    func: (backgroundColor, filenamePrefixEnabledValue, filenameSelectors) => {
-      window.__canvasExtractorBackgroundColor = backgroundColor;
-      window.__canvasExtractorFilenamePrefixEnabled = filenamePrefixEnabledValue;
-      window.__canvasExtractorFilenameSelectors = filenameSelectors;
-    },
-    args: [backgroundOptions.backgroundColor, backgroundOptions.filenamePrefixEnabled, backgroundOptions.filenameSelectors]
-  });
+  await setScanOptions(backgroundOptions);
 
   await chrome.scripting.executeScript({
     target: { tabId, allFrames: true },
@@ -126,6 +118,20 @@ async function collectFromAllFrames(tabId, backgroundOptions) {
   });
 
   return collectPromise;
+}
+
+function setScanOptions(options) {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.set({ canvasExtractorOptions: options }, () => {
+      const runtimeError = chrome.runtime.lastError;
+      if (runtimeError) {
+        reject(new Error(runtimeError.message || String(runtimeError)));
+        return;
+      }
+
+      resolve();
+    });
+  });
 }
 
 function flattenCanvasBatches(batches) {

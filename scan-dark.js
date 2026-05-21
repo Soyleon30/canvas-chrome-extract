@@ -1,10 +1,33 @@
 (() => {
-  if (typeof window.__canvasExtractorScan === "function") {
-    window.__canvasExtractorScan({
-      backgroundMode: "dark",
-      backgroundColor: window.__canvasExtractorBackgroundColor || "#0a0d19",
-      filenamePrefixEnabled: window.__canvasExtractorFilenamePrefixEnabled !== false,
-      filenameSelectors: window.__canvasExtractorFilenameSelectors || [".newKpi2.col .title span.text-blue"]
-    });
+  const fallbackOptions = {
+    backgroundMode: "dark",
+    backgroundColor: "#0a0d19",
+    filenamePrefixEnabled: true,
+    filenameSelectors: [".newKpi2.col .title span.text-blue"]
+  };
+
+  function scan(options) {
+    if (typeof window.__canvasExtractorScan === "function") {
+      window.__canvasExtractorScan({
+        ...fallbackOptions,
+        ...options,
+        backgroundMode: "dark"
+      });
+    }
   }
+
+  if (!chrome.storage || !chrome.storage.local) {
+    scan(fallbackOptions);
+    return;
+  }
+
+  chrome.storage.local.get(["canvasExtractorOptions"], (result) => {
+    const runtimeError = chrome.runtime.lastError;
+    if (runtimeError) {
+      scan(fallbackOptions);
+      return;
+    }
+
+    scan(result && result.canvasExtractorOptions);
+  });
 })();
