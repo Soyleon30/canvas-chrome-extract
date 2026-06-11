@@ -183,7 +183,7 @@ function renderCanvases() {
 
     if (item.dataUrl) {
       preview.src = item.dataUrl;
-      preview.alt = item.name;
+      preview.alt = `${item.name || "Canvas"} 的图像预览`;
     } else {
       preview.remove();
       fallback.style.display = "block";
