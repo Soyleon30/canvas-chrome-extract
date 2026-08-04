@@ -13,6 +13,7 @@ const template = document.getElementById("canvasItemTemplate");
 
 let currentCanvases = [];
 let currentTabTitle = "page";
+let currentTabId = null;
 let currentBackgroundColor = "#0a0d19";
 let currentFilenameSelectors = ".newKpi2.col .title span.text-blue";
 let isFilenamePrefixEnabled = true;
@@ -59,10 +60,11 @@ function scanCurrentTab() {
       return;
     }
 
+    currentTabId = tab.id;
     currentTabTitle = tab.title || "page";
     pageInfoEl.textContent = trimText(tab.url || currentTabTitle, 58);
 
-    collectFromAllFrames(tab.id, getBackgroundOptions(), (collectError, result) => {
+    collectFromAllFrames(tab.id, getScanOptions(), (collectError, result) => {
       if (collectError) {
         setStatus(`扫描失败：${collectError.message}`, true);
         return;
@@ -89,11 +91,12 @@ function queryCurrentTab(callback) {
 function collectFromAllFrames(tabId, backgroundOptions, callback) {
   const batches = [];
   const scanStartedAt = Date.now();
+  const isFullExport = backgroundOptions.exportMode === "full";
   let isDone = false;
 
   const timer = setTimeout(() => {
     finish(null, flattenCanvasBatches(batches));
-  }, 900);
+  }, isFullExport ? 8000 : 900);
 
   function finish(error, result) {
     if (isDone) {
@@ -119,15 +122,20 @@ function collectFromAllFrames(tabId, backgroundOptions, callback) {
       return;
     }
 
+    const canvases = Array.isArray(message.canvases) ? message.canvases : [];
+    if (isFullExport && canvases.length === 0) {
+      return;
+    }
+
     batches.push({
       frameId: sender.frameId || 0,
       frameUrl: sender.url || "",
-      canvases: Array.isArray(message.canvases) ? message.canvases : []
+      canvases
     });
 
     setTimeout(() => {
       finish(null, flattenCanvasBatches(batches));
-    }, 250);
+    }, isFullExport ? 100 : 250);
   }
 
   chrome.runtime.onMessage.addListener(onMessage);
@@ -160,7 +168,10 @@ function setPageOptions(tabId, options, callback) {
   const code = [
     `window.__canvasExtractorBackgroundColor = ${JSON.stringify(color)};`,
     `window.__canvasExtractorFilenamePrefixEnabled = ${JSON.stringify(options.filenamePrefixEnabled !== false)};`,
-    `window.__canvasExtractorFilenameSelectors = ${JSON.stringify(selectors)};`
+    `window.__canvasExtractorFilenameSelectors = ${JSON.stringify(selectors)};`,
+    `window.__canvasExtractorExportMode = ${JSON.stringify(options.exportMode === "full" ? "full" : "preview")};`,
+    `window.__canvasExtractorPreviewMaxSize = ${JSON.stringify(options.previewMaxSize || 240)};`,
+    `window.__canvasExtractorTarget = ${JSON.stringify(options.target || null)};`
   ].join("\n");
   chrome.tabs.executeScript(tabId, { code, allFrames: true }, () => {
     const runtimeError = chrome.runtime.lastError;
@@ -198,7 +209,7 @@ function renderCanvases() {
     return;
   }
 
-  const downloadable = currentCanvases.filter((item) => item.dataUrl);
+  const downloadable = currentCanvases.filter((item) => item.exportable);
   setStatus(`找到 ${currentCanvases.length} 个 canvas，其中 ${downloadable.length} 个可导出。`);
   downloadAllButton.disabled = downloadable.length === 0;
   copyReportButton.disabled = false;
@@ -216,14 +227,14 @@ function renderCanvases() {
     const copyButton = node.querySelector(".copyButton");
 
     title.textContent = item.name;
-    badge.textContent = item.dataUrl ? "可导出" : "受限";
-    badge.classList.toggle("isError", !item.dataUrl);
+    badge.textContent = item.exportable ? "可导出" : "受限";
+    badge.classList.toggle("isError", !item.exportable);
     const ipText = item.ipAddress ? `，IP ${item.ipAddress}` : "";
     meta.textContent = `${item.width}x${item.height} 像素，页面显示 ${item.displayWidth}x${item.displayHeight}，frame ${item.frameId || 0}${ipText}`;
     selector.textContent = item.selector || "canvas";
 
-    if (item.dataUrl) {
-      preview.src = item.dataUrl;
+    if (item.previewDataUrl) {
+      preview.src = item.previewDataUrl;
       preview.alt = `${item.name || "Canvas"} 的图像预览`;
     } else {
       preview.remove();
@@ -232,8 +243,8 @@ function renderCanvases() {
       error.textContent = item.error || "浏览器阻止读取此 canvas";
     }
 
-    downloadButton.disabled = !item.dataUrl;
-    copyButton.disabled = !item.dataUrl;
+    downloadButton.disabled = !item.exportable;
+    copyButton.disabled = !item.exportable;
     downloadButton.addEventListener("click", () => downloadCanvas(item));
     copyButton.addEventListener("click", () => copyDataUrl(item));
 
@@ -242,7 +253,7 @@ function renderCanvases() {
 }
 
 async function downloadAll() {
-  const items = currentCanvases.filter((item) => item.dataUrl);
+  const items = currentCanvases.filter((item) => item.exportable);
   for (const item of items) {
     await downloadCanvas(item, false);
   }
@@ -251,30 +262,80 @@ async function downloadAll() {
 function downloadCanvas(item, showDone = true) {
   const filename = makeFilename(item);
   return new Promise((resolve) => {
-    chrome.downloads.download({
-      url: item.dataUrl,
-      filename,
-      saveAs: false
-    }, () => {
-      const runtimeError = chrome.runtime.lastError;
-      if (runtimeError) {
-        setStatus(`下载失败：${runtimeError.message || String(runtimeError)}`, true);
+    exportFullCanvas(item, (exportError, dataUrl) => {
+      if (exportError) {
+        setStatus(`导出失败：${exportError.message}`, true);
         resolve();
         return;
       }
 
-      if (showDone) {
-        setStatus(`已开始下载：${filename}`);
-      }
+      chrome.downloads.download({
+        url: dataUrl,
+        filename,
+        saveAs: false
+      }, () => {
+        const runtimeError = chrome.runtime.lastError;
+        if (runtimeError) {
+          setStatus(`下载失败：${runtimeError.message || String(runtimeError)}`, true);
+          resolve();
+          return;
+        }
 
-      resolve();
+        if (showDone) {
+          setStatus(`已开始下载：${filename}`);
+        }
+
+        resolve();
+      });
     });
   });
 }
 
-async function copyDataUrl(item) {
-  await navigator.clipboard.writeText(item.dataUrl);
-  setStatus(`已复制：${item.name}`);
+function copyDataUrl(item) {
+  exportFullCanvas(item, async (exportError, dataUrl) => {
+    if (exportError) {
+      setStatus(`导出失败：${exportError.message}`, true);
+      return;
+    }
+
+    await navigator.clipboard.writeText(dataUrl);
+    setStatus(`已复制：${item.name}`);
+  });
+}
+
+function exportFullCanvas(item, callback) {
+  if (!currentTabId) {
+    callback(new Error("没有可用的当前标签页"));
+    return;
+  }
+
+  setStatus(`正在导出：${item.name}`);
+  collectFromAllFrames(currentTabId, {
+    ...getBackgroundOptions(),
+    exportMode: "full",
+    target: {
+      sourceIndex: item.sourceIndex,
+      selector: item.selector
+    }
+  }, (error, result) => {
+    if (error) {
+      callback(error);
+      return;
+    }
+
+    const exported = result.find((candidate) =>
+      candidate.frameId === item.frameId &&
+      candidate.sourceIndex === item.sourceIndex &&
+      candidate.dataUrl
+    ) || result.find((candidate) => candidate.dataUrl);
+
+    if (!exported || !exported.dataUrl) {
+      callback(new Error(item.error || "未能导出完整 canvas"));
+      return;
+    }
+
+    callback(null, exported.dataUrl);
+  });
 }
 
 async function copyReport() {
@@ -283,7 +344,7 @@ async function copyReport() {
     `size=${item.width}x${item.height}`,
     `display=${item.displayWidth}x${item.displayHeight}`,
     `visible=${item.visible}`,
-    `exportable=${Boolean(item.dataUrl)}`,
+    `exportable=${Boolean(item.exportable)}`,
     item.filenamePrefix ? `filenamePrefix=${item.filenamePrefix}` : "",
     item.ipAddress ? `ip=${item.ipAddress}` : "",
     `frame=${item.frameId || 0}`,
@@ -323,6 +384,14 @@ function getBackgroundOptions() {
     backgroundColor: currentBackgroundColor,
     filenamePrefixEnabled: isFilenamePrefixEnabled,
     filenameSelectors: isFilenamePrefixEnabled ? normalizeSelectorList(currentFilenameSelectors) : []
+  };
+}
+
+function getScanOptions() {
+  return {
+    ...getBackgroundOptions(),
+    exportMode: "preview",
+    previewMaxSize: 240
   };
 }
 
