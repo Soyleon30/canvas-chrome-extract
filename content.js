@@ -22,12 +22,20 @@
     return {
       backgroundMode: isTransparent ? "transparent" : "dark",
       backgroundColor: normalizeColor(requestedColor),
-      filenameSelectors: normalizeSelectorList(request && request.filenameSelectors, request && request.filenamePrefixEnabled !== false)
+      filenameSelectors: normalizeSelectorList(request && request.filenameSelectors, request && request.filenamePrefixEnabled !== false),
+      exportMode: request && request.exportMode === "full" ? "full" : "preview",
+      previewMaxSize: normalizePreviewSize(request && request.previewMaxSize),
+      target: request && request.target ? request.target : null
     };
   }
 
   function normalizeColor(value) {
     return /^#[0-9a-fA-F]{6}$/.test(String(value || "")) ? String(value).toLowerCase() : "#0a0d19";
+  }
+
+  function normalizePreviewSize(value) {
+    const size = Number(value);
+    return Number.isFinite(size) && size >= 80 && size <= 800 ? Math.round(size) : 240;
   }
 
   function normalizeSelectorList(value, isEnabled) {
@@ -44,10 +52,15 @@
     const pagePrefix = getPageFilenamePrefix(options.filenameSelectors);
 
     return [...document.querySelectorAll("canvas")].map((canvas, index) => {
+      if (options.exportMode === "full" && !matchesTarget(canvas, index, options.target)) {
+        return null;
+      }
+
       const rect = canvas.getBoundingClientRect();
       const styles = getComputedStyle(canvas);
       const info = {
         index,
+        sourceIndex: index,
         name: inferName(canvas, index),
         width: canvas.width,
         height: canvas.height,
@@ -59,24 +72,42 @@
         ipAddress: pagePrefix,
         backgroundMode: options.backgroundMode,
         backgroundColor: options.backgroundColor,
+        exportable: false,
+        previewDataUrl: "",
         dataUrl: "",
         error: ""
       };
 
       try {
-        info.dataUrl = options.backgroundMode === "transparent"
-          ? canvas.toDataURL("image/png")
-          : exportCanvasWithBackground(canvas, options.backgroundColor);
+        if (options.exportMode === "full") {
+          info.dataUrl = exportCanvas(canvas, options.backgroundMode, options.backgroundColor, 0);
+        } else {
+          info.previewDataUrl = exportCanvas(canvas, options.backgroundMode, options.backgroundColor, options.previewMaxSize);
+        }
+
+        info.exportable = true;
       } catch (error) {
         info.error = error && error.message ? error.message : String(error);
       }
 
       return info;
-    }).sort((a, b) => {
+    }).filter(Boolean).sort((a, b) => {
       const areaA = a.width * a.height;
       const areaB = b.width * b.height;
       return areaB - areaA;
     });
+  }
+
+  function matchesTarget(canvas, index, target) {
+    if (!target) {
+      return true;
+    }
+
+    if (Number(target.sourceIndex) !== index) {
+      return false;
+    }
+
+    return !target.selector || makeSelector(canvas) === target.selector;
   }
 
   function makeSelector(element) {
@@ -117,17 +148,30 @@
     return labelled || parentLabel || `Canvas ${index + 1}`;
   }
 
-  function exportCanvasWithBackground(canvas, backgroundColor) {
+  function exportCanvas(canvas, backgroundMode, backgroundColor, maxSize) {
     const output = document.createElement("canvas");
-    output.width = canvas.width;
-    output.height = canvas.height;
+    const scale = getExportScale(canvas, maxSize);
+    output.width = Math.max(1, Math.round(canvas.width * scale));
+    output.height = Math.max(1, Math.round(canvas.height * scale));
 
     const context = output.getContext("2d");
-    context.fillStyle = backgroundColor;
-    context.fillRect(0, 0, output.width, output.height);
-    context.drawImage(canvas, 0, 0);
+    if (backgroundMode !== "transparent") {
+      context.fillStyle = backgroundColor;
+      context.fillRect(0, 0, output.width, output.height);
+    }
+
+    context.drawImage(canvas, 0, 0, output.width, output.height);
 
     return output.toDataURL("image/png");
+  }
+
+  function getExportScale(canvas, maxSize) {
+    if (!maxSize) {
+      return 1;
+    }
+
+    const largestSide = Math.max(canvas.width, canvas.height);
+    return largestSide > maxSize ? maxSize / largestSide : 1;
   }
 
   function getPageFilenamePrefix(selectors) {
