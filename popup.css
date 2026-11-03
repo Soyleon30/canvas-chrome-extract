@@ -251,6 +251,26 @@ button:disabled {
   background-color: #fff;
   background-position: 0 0, 0 8px, 8px -8px, -8px 0;
   background-size: 16px 16px;
+  cursor: zoom-in;
+}
+
+.previewWrap::after {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(20, 30, 48, 0.82);
+  color: #fff;
+  content: "放大";
+  font-size: 10px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.previewWrap:hover::after {
+  opacity: 1;
 }
 
 .preview {
@@ -330,4 +350,68 @@ button:disabled {
 .actions button {
   min-width: 0;
   padding: 0 8px;
+}
+
+.zoomOverlay[hidden] {
+  display: none;
+}
+
+.zoomOverlay {
+  position: fixed;
+  z-index: 20;
+  top: 68px;
+  right: 12px;
+  left: 12px;
+  padding: 10px;
+  border: 1px solid var(--strong-line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 12px 32px rgba(18, 31, 53, 0.28);
+  pointer-events: none;
+}
+
+.zoomHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 8px;
+}
+
+.zoomHeading strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zoomHeading span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.zoomImageFrame {
+  display: grid;
+  place-items: center;
+  min-height: 140px;
+  max-height: 390px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background:
+    linear-gradient(45deg, #e9edf5 25%, transparent 25%),
+    linear-gradient(-45deg, #e9edf5 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e9edf5 75%),
+    linear-gradient(-45deg, transparent 75%, #e9edf5 75%);
+  background-color: #fff;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+}
+
+.zoomImageFrame img {
+  display: block;
+  max-width: 100%;
+  max-height: 370px;
+  object-fit: contain;
 }

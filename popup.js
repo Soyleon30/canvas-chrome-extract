@@ -10,6 +10,10 @@ const backgroundColorText = document.getElementById("backgroundColorText");
 const filenamePrefixEnabled = document.getElementById("filenamePrefixEnabled");
 const filenameSelectorInput = document.getElementById("filenameSelectorInput");
 const template = document.getElementById("canvasItemTemplate");
+const zoomOverlay = document.getElementById("zoomOverlay");
+const zoomTitle = document.getElementById("zoomTitle");
+const zoomStatus = document.getElementById("zoomStatus");
+const zoomImage = document.getElementById("zoomImage");
 
 let currentCanvases = [];
 let currentTabTitle = "page";
@@ -17,6 +21,8 @@ let currentTabId = null;
 let currentBackgroundColor = "#0a0d19";
 let currentFilenameSelectors = ".newKpi2.col .title span.text-blue";
 let isFilenamePrefixEnabled = true;
+let zoomRequestId = 0;
+let zoomTimer = null;
 
 document.addEventListener("DOMContentLoaded", scanCurrentTab);
 appTitle.addEventListener("dblclick", toggleReportButton);
@@ -43,6 +49,7 @@ function toggleReportButton(event) {
 }
 
 async function scanCurrentTab() {
+  hideZoom();
   setStatus("正在扫描...");
   canvasListEl.textContent = "";
   currentCanvases = [];
@@ -70,13 +77,13 @@ async function scanCurrentTab() {
 async function collectFromAllFrames(tabId, backgroundOptions) {
   const batches = [];
   const scanStartedAt = Date.now();
-  const isFullExport = backgroundOptions.exportMode === "full";
+  const isTargetExport = backgroundOptions.exportMode !== "preview";
 
   const collectPromise = new Promise((resolve) => {
     const timer = setTimeout(() => {
       chrome.runtime.onMessage.removeListener(onMessage);
       resolve(flattenCanvasBatches(batches));
-    }, isFullExport ? 8000 : 900);
+    }, isTargetExport ? 8000 : 900);
 
     function onMessage(message, sender) {
       if (!message || message.type !== "CANVAS_EXTRACTOR_RESULT") {
@@ -92,7 +99,7 @@ async function collectFromAllFrames(tabId, backgroundOptions) {
       }
 
       const canvases = Array.isArray(message.canvases) ? message.canvases : [];
-      if (isFullExport && canvases.length === 0) {
+      if (isTargetExport && canvases.length === 0) {
         return;
       }
 
@@ -106,7 +113,7 @@ async function collectFromAllFrames(tabId, backgroundOptions) {
       setTimeout(() => {
         chrome.runtime.onMessage.removeListener(onMessage);
         resolve(flattenCanvasBatches(batches));
-      }, isFullExport ? 100 : 250);
+      }, isTargetExport ? 100 : 250);
     }
 
     chrome.runtime.onMessage.addListener(onMessage);
@@ -173,6 +180,7 @@ function renderCanvases() {
   for (const item of currentCanvases) {
     const node = template.content.firstElementChild.cloneNode(true);
     const preview = node.querySelector(".preview");
+    const previewWrap = node.querySelector(".previewWrap");
     const fallback = node.querySelector(".previewFallback");
     const title = node.querySelector(".itemTitle");
     const badge = node.querySelector(".badge");
@@ -192,6 +200,8 @@ function renderCanvases() {
     if (item.previewDataUrl) {
       preview.src = item.previewDataUrl;
       preview.alt = `${item.name || "Canvas"} 的图像预览`;
+      previewWrap.addEventListener("mouseenter", () => showZoom(item));
+      previewWrap.addEventListener("mouseleave", hideZoom);
     } else {
       preview.remove();
       fallback.style.display = "block";
@@ -269,6 +279,69 @@ async function exportFullCanvas(item) {
   }
 
   return exported.dataUrl;
+}
+
+function showZoom(item) {
+  if (!item.exportable) {
+    return;
+  }
+
+  clearTimeout(zoomTimer);
+  const requestId = ++zoomRequestId;
+  zoomTitle.textContent = item.name || `Canvas ${item.index + 1}`;
+  zoomStatus.textContent = "正在生成清晰预览...";
+  zoomImage.removeAttribute("src");
+  zoomImage.alt = `${item.name || "Canvas"} 的放大预览`;
+  zoomOverlay.hidden = false;
+  zoomOverlay.setAttribute("aria-hidden", "false");
+
+  zoomTimer = setTimeout(async () => {
+    try {
+      const previewDataUrl = await exportCanvasPreview(item, 1200);
+      if (requestId !== zoomRequestId) {
+        return;
+      }
+
+      zoomImage.src = previewDataUrl;
+      zoomStatus.textContent = `${item.width} x ${item.height}`;
+    } catch (error) {
+      if (requestId === zoomRequestId) {
+        zoomStatus.textContent = "无法生成放大预览";
+      }
+    }
+  }, 180);
+}
+
+function hideZoom() {
+  clearTimeout(zoomTimer);
+  zoomRequestId += 1;
+  zoomImage.removeAttribute("src");
+  zoomOverlay.hidden = true;
+  zoomOverlay.setAttribute("aria-hidden", "true");
+}
+
+async function exportCanvasPreview(item, maxSize) {
+  const result = await collectFromAllFrames(currentTabId, {
+    ...getBackgroundOptions(),
+    exportMode: "zoom",
+    previewMaxSize: maxSize,
+    target: {
+      sourceIndex: item.sourceIndex,
+      selector: item.selector
+    }
+  });
+
+  const exported = result.find((candidate) =>
+    candidate.frameId === item.frameId &&
+    candidate.sourceIndex === item.sourceIndex &&
+    candidate.previewDataUrl
+  );
+
+  if (!exported || !exported.previewDataUrl) {
+    throw new Error("未能生成放大预览");
+  }
+
+  return exported.previewDataUrl;
 }
 
 async function copyReport() {

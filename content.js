@@ -23,7 +23,7 @@
       backgroundMode: isTransparent ? "transparent" : "dark",
       backgroundColor: normalizeColor(requestedColor),
       filenameSelectors: normalizeSelectorList(request && request.filenameSelectors, request && request.filenamePrefixEnabled !== false),
-      exportMode: request && request.exportMode === "full" ? "full" : "preview",
+      exportMode: request && ["full", "zoom"].indexOf(request.exportMode) !== -1 ? request.exportMode : "preview",
       previewMaxSize: normalizePreviewSize(request && request.previewMaxSize),
       target: request && request.target ? request.target : null
     };
@@ -35,7 +35,7 @@
 
   function normalizePreviewSize(value) {
     const size = Number(value);
-    return Number.isFinite(size) && size >= 80 && size <= 800 ? Math.round(size) : 240;
+    return Number.isFinite(size) && size >= 80 && size <= 1200 ? Math.round(size) : 240;
   }
 
   function normalizeSelectorList(value, isEnabled) {
@@ -52,7 +52,7 @@
     const pagePrefix = getPageFilenamePrefix(options.filenameSelectors);
 
     return [...document.querySelectorAll("canvas")].map((canvas, index) => {
-      if (options.exportMode === "full" && !matchesTarget(canvas, index, options.target)) {
+      if (options.exportMode !== "preview" && !matchesTarget(canvas, index, options.target)) {
         return null;
       }
 
@@ -142,10 +142,78 @@
   }
 
   function inferName(canvas, index) {
-    const chartRoot = canvas.closest("[_echarts_instance_], .echarts, .v-chart, [data-v-app]");
+    const chartRoot = canvas.closest("[_echarts_instance_], .echarts, .v-chart, .vue-echarts, [class*=\"echarts\"]");
     const labelled = canvas.getAttribute("aria-label") || canvas.getAttribute("title");
     const parentLabel = chartRoot && (chartRoot.getAttribute("aria-label") || chartRoot.getAttribute("title"));
-    return labelled || parentLabel || `Canvas ${index + 1}`;
+    return labelled || getEChartsTitle(chartRoot) || getNearbyTitle(canvas, chartRoot) || parentLabel || `Canvas ${index + 1}`;
+  }
+
+  function getEChartsTitle(chartRoot) {
+    if (!chartRoot) {
+      return "";
+    }
+
+    const echartsApi = window.echarts || window.ECharts;
+    if (!echartsApi || typeof echartsApi.getInstanceByDom !== "function") {
+      return "";
+    }
+
+    try {
+      const instance = echartsApi.getInstanceByDom(chartRoot);
+      const option = instance && instance.getOption();
+      const titles = option && Array.isArray(option.title) ? option.title : [option && option.title];
+      for (const title of titles) {
+        const text = normalizeTitleText(title && title.text) || normalizeTitleText(title && title.subtext);
+        if (text) {
+          return text;
+        }
+      }
+    } catch (error) {
+      return "";
+    }
+
+    return "";
+  }
+
+  function getNearbyTitle(canvas, chartRoot) {
+    const titleSelector = "h1, h2, h3, h4, h5, h6, [role=heading], [data-title], .chart-title, .card-title, .panel-title, .title";
+    let ancestor = chartRoot || canvas.parentElement;
+
+    for (let depth = 0; ancestor && depth < 6; depth += 1, ancestor = ancestor.parentElement) {
+      const candidates = [];
+      for (const child of ancestor.children) {
+        if (child.matches(titleSelector)) {
+          candidates.push(child);
+        } else if (child.matches("header, .card-header, .panel-heading, .chart-header")) {
+          candidates.push(...child.querySelectorAll(titleSelector));
+        }
+      }
+
+      for (const candidate of candidates) {
+        if (candidate === canvas || candidate.contains(canvas)) {
+          continue;
+        }
+
+        const text = normalizeTitleText(candidate.innerText || candidate.textContent);
+        if (text && text.length <= 100 && !isIgnoredTitle(candidate, text)) {
+          return text;
+        }
+      }
+    }
+
+    return "";
+  }
+
+  function isIgnoredTitle(candidate, text) {
+    if (candidate.matches(".newKpi2.col .title, .newKpi2.col .title span.text-blue, .text-blue")) {
+      return true;
+    }
+
+    return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(text);
+  }
+
+  function normalizeTitleText(value) {
+    return String(value || "").replace(/\\s+/g, " ").trim();
   }
 
   function exportCanvas(canvas, backgroundMode, backgroundColor, maxSize) {

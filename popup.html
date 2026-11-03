@@ -70,6 +70,16 @@
       </article>
     </template>
 
+    <div id="zoomOverlay" class="zoomOverlay" aria-hidden="true" hidden>
+      <div class="zoomHeading">
+        <strong id="zoomTitle"></strong>
+        <span id="zoomStatus" role="status">正在生成清晰预览...</span>
+      </div>
+      <div class="zoomImageFrame">
+        <img id="zoomImage" alt="Canvas 图表放大预览">
+      </div>
+    </div>
+
     <script src="popup.js"></script>
   </body>
 </html>
