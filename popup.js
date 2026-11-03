@@ -10,6 +10,10 @@ const backgroundColorText = document.getElementById("backgroundColorText");
 const filenamePrefixEnabled = document.getElementById("filenamePrefixEnabled");
 const filenameSelectorInput = document.getElementById("filenameSelectorInput");
 const template = document.getElementById("canvasItemTemplate");
+const zoomOverlay = document.getElementById("zoomOverlay");
+const zoomTitle = document.getElementById("zoomTitle");
+const zoomStatus = document.getElementById("zoomStatus");
+const zoomImage = document.getElementById("zoomImage");
 
 let currentCanvases = [];
 let currentTabTitle = "page";
@@ -17,6 +21,8 @@ let currentTabId = null;
 let currentBackgroundColor = "#0a0d19";
 let currentFilenameSelectors = ".newKpi2.col .title span.text-blue";
 let isFilenamePrefixEnabled = true;
+let zoomRequestId = 0;
+let zoomTimer = null;
 
 document.addEventListener("DOMContentLoaded", scanCurrentTab);
 appTitle.addEventListener("dblclick", toggleReportButton);
@@ -43,6 +49,7 @@ function toggleReportButton(event) {
 }
 
 function scanCurrentTab() {
+  hideZoom();
   setStatus("正在扫描...");
   canvasListEl.textContent = "";
   currentCanvases = [];
@@ -91,12 +98,12 @@ function queryCurrentTab(callback) {
 function collectFromAllFrames(tabId, backgroundOptions, callback) {
   const batches = [];
   const scanStartedAt = Date.now();
-  const isFullExport = backgroundOptions.exportMode === "full";
+  const isTargetExport = backgroundOptions.exportMode !== "preview";
   let isDone = false;
 
   const timer = setTimeout(() => {
     finish(null, flattenCanvasBatches(batches));
-  }, isFullExport ? 8000 : 900);
+  }, isTargetExport ? 8000 : 900);
 
   function finish(error, result) {
     if (isDone) {
@@ -123,7 +130,7 @@ function collectFromAllFrames(tabId, backgroundOptions, callback) {
     }
 
     const canvases = Array.isArray(message.canvases) ? message.canvases : [];
-    if (isFullExport && canvases.length === 0) {
+    if (isTargetExport && canvases.length === 0) {
       return;
     }
 
@@ -135,7 +142,7 @@ function collectFromAllFrames(tabId, backgroundOptions, callback) {
 
     setTimeout(() => {
       finish(null, flattenCanvasBatches(batches));
-    }, isFullExport ? 100 : 250);
+    }, isTargetExport ? 100 : 250);
   }
 
   chrome.runtime.onMessage.addListener(onMessage);
@@ -169,7 +176,7 @@ function setPageOptions(tabId, options, callback) {
     `window.__canvasExtractorBackgroundColor = ${JSON.stringify(color)};`,
     `window.__canvasExtractorFilenamePrefixEnabled = ${JSON.stringify(options.filenamePrefixEnabled !== false)};`,
     `window.__canvasExtractorFilenameSelectors = ${JSON.stringify(selectors)};`,
-    `window.__canvasExtractorExportMode = ${JSON.stringify(options.exportMode === "full" ? "full" : "preview")};`,
+    `window.__canvasExtractorExportMode = ${JSON.stringify(["full", "zoom"].indexOf(options.exportMode) !== -1 ? options.exportMode : "preview")};`,
     `window.__canvasExtractorPreviewMaxSize = ${JSON.stringify(options.previewMaxSize || 240)};`,
     `window.__canvasExtractorTarget = ${JSON.stringify(options.target || null)};`
   ].join("\n");
@@ -217,6 +224,7 @@ function renderCanvases() {
   for (const item of currentCanvases) {
     const node = template.content.firstElementChild.cloneNode(true);
     const preview = node.querySelector(".preview");
+    const previewWrap = node.querySelector(".previewWrap");
     const fallback = node.querySelector(".previewFallback");
     const title = node.querySelector(".itemTitle");
     const badge = node.querySelector(".badge");
@@ -236,6 +244,8 @@ function renderCanvases() {
     if (item.previewDataUrl) {
       preview.src = item.previewDataUrl;
       preview.alt = `${item.name || "Canvas"} 的图像预览`;
+      previewWrap.addEventListener("mouseenter", () => showZoom(item));
+      previewWrap.addEventListener("mouseleave", hideZoom);
     } else {
       preview.remove();
       fallback.style.display = "block";
@@ -335,6 +345,75 @@ function exportFullCanvas(item, callback) {
     }
 
     callback(null, exported.dataUrl);
+  });
+}
+
+function showZoom(item) {
+  if (!item.exportable) {
+    return;
+  }
+
+  clearTimeout(zoomTimer);
+  const requestId = ++zoomRequestId;
+  zoomTitle.textContent = item.name || `Canvas ${item.index + 1}`;
+  zoomStatus.textContent = "正在生成清晰预览...";
+  zoomImage.removeAttribute("src");
+  zoomImage.alt = `${item.name || "Canvas"} 的放大预览`;
+  zoomOverlay.hidden = false;
+  zoomOverlay.setAttribute("aria-hidden", "false");
+
+  zoomTimer = setTimeout(() => {
+    exportCanvasPreview(item, 1200, (error, previewDataUrl) => {
+      if (requestId !== zoomRequestId) {
+        return;
+      }
+
+      if (error) {
+        zoomStatus.textContent = "无法生成放大预览";
+        return;
+      }
+
+      zoomImage.src = previewDataUrl;
+      zoomStatus.textContent = `${item.width} x ${item.height}`;
+    });
+  }, 180);
+}
+
+function hideZoom() {
+  clearTimeout(zoomTimer);
+  zoomRequestId += 1;
+  zoomImage.removeAttribute("src");
+  zoomOverlay.hidden = true;
+  zoomOverlay.setAttribute("aria-hidden", "true");
+}
+
+function exportCanvasPreview(item, maxSize, callback) {
+  collectFromAllFrames(currentTabId, {
+    ...getBackgroundOptions(),
+    exportMode: "zoom",
+    previewMaxSize: maxSize,
+    target: {
+      sourceIndex: item.sourceIndex,
+      selector: item.selector
+    }
+  }, (error, result) => {
+    if (error) {
+      callback(error);
+      return;
+    }
+
+    const exported = result.find((candidate) =>
+      candidate.frameId === item.frameId &&
+      candidate.sourceIndex === item.sourceIndex &&
+      candidate.previewDataUrl
+    );
+
+    if (!exported || !exported.previewDataUrl) {
+      callback(new Error("未能生成放大预览"));
+      return;
+    }
+
+    callback(null, exported.previewDataUrl);
   });
 }
 
