@@ -1,12 +1,16 @@
 (() => {
-  if (window.__canvasExtractorContentReady) {
+  const contentVersion = "1.4.0";
+  if (window.__canvasExtractorContentReady === contentVersion) {
     return;
   }
 
-  window.__canvasExtractorContentReady = true;
+  window.__canvasExtractorContentReady = contentVersion;
 
-  window.__canvasExtractorScan = (request) => {
+  window.__canvasExtractorScan = async (request) => {
     const options = normalizeScanOptions(request);
+    if (options.exportMode === "preview") {
+      await readPageChartTitles();
+    }
     const canvases = collectCanvasInfo(options);
 
     chrome.runtime.sendMessage({
@@ -15,6 +19,36 @@
       canvases
     });
   };
+
+  function readPageChartTitles() {
+    return new Promise((resolve) => {
+      const parent = document.head || document.documentElement;
+      if (!parent) {
+        resolve();
+        return;
+      }
+
+      const script = document.createElement("script");
+      let timer;
+      function finish() {
+        clearTimeout(timer);
+        script.onload = null;
+        script.onerror = null;
+        script.remove();
+        resolve();
+      }
+
+      script.onload = finish;
+      script.onerror = finish;
+      timer = setTimeout(finish, 250);
+      try {
+        script.src = chrome.runtime.getURL("chart-titles.js");
+        parent.appendChild(script);
+      } catch (_) {
+        finish();
+      }
+    });
+  }
 
   function normalizeScanOptions(request) {
     const isTransparent = request === "transparent" || request && request.backgroundMode === "transparent";
@@ -143,58 +177,30 @@
 
   function inferName(canvas, index) {
     const chartRoot = canvas.closest("[_echarts_instance_], .echarts, .v-chart, .vue-echarts, [class*=\"echarts\"]");
-    const labelled = canvas.getAttribute("aria-label") || canvas.getAttribute("title");
-    const parentLabel = chartRoot && (chartRoot.getAttribute("aria-label") || chartRoot.getAttribute("title"));
-    return labelled || getEChartsTitle(chartRoot) || getNearbyTitle(canvas, chartRoot) || parentLabel || `Canvas ${index + 1}`;
-  }
-
-  function getEChartsTitle(chartRoot) {
-    if (!chartRoot) {
-      return "";
-    }
-
-    const echartsApi = window.echarts || window.ECharts;
-    if (!echartsApi || typeof echartsApi.getInstanceByDom !== "function") {
-      return "";
-    }
-
-    try {
-      const instance = echartsApi.getInstanceByDom(chartRoot);
-      const option = instance && instance.getOption();
-      const titles = option && Array.isArray(option.title) ? option.title : [option && option.title];
-      for (const title of titles) {
-        const text = normalizeTitleText(title && title.text) || normalizeTitleText(title && title.subtext);
-        if (text) {
-          return text;
-        }
-      }
-    } catch (error) {
-      return "";
-    }
-
-    return "";
+    const chartTitle = normalizeTitleText(canvas.getAttribute("data-canvas-extractor-title"));
+    const labelled = normalizeTitleText(canvas.getAttribute("title") || canvas.getAttribute("aria-label"));
+    const parentLabel = chartRoot && normalizeTitleText(chartRoot.getAttribute("title") || chartRoot.getAttribute("aria-label"));
+    return chartTitle || getNearbyTitle(canvas, chartRoot) || labelled || parentLabel || `Canvas ${index + 1}`;
   }
 
   function getNearbyTitle(canvas, chartRoot) {
-    const titleSelector = "h1, h2, h3, h4, h5, h6, [role=heading], [data-title], .chart-title, .card-title, .panel-title, .title";
+    const titleSelector = "h1, h2, h3, h4, h5, h6, [role=heading], [data-title], [class*=\"title\"], [class*=\"Title\"], .el-card__header, .ivu-card-head";
     let ancestor = chartRoot || canvas.parentElement;
 
-    for (let depth = 0; ancestor && depth < 6; depth += 1, ancestor = ancestor.parentElement) {
-      const candidates = [];
-      for (const child of ancestor.children) {
-        if (child.matches(titleSelector)) {
-          candidates.push(child);
-        } else if (child.matches("header, .card-header, .panel-heading, .chart-header")) {
-          candidates.push(...child.querySelectorAll(titleSelector));
-        }
+    for (let depth = 0; ancestor && ancestor !== document.body && depth < 6; depth += 1, ancestor = ancestor.parentElement) {
+      const hasOtherChart = [...ancestor.querySelectorAll("canvas")].some((other) =>
+        other !== canvas && (!chartRoot || !chartRoot.contains(other))
+      );
+      if (hasOtherChart) {
+        break;
       }
 
-      for (const candidate of candidates) {
-        if (candidate === canvas || candidate.contains(canvas)) {
+      for (const candidate of ancestor.querySelectorAll(titleSelector)) {
+        if (candidate === canvas || candidate.contains(canvas) || !candidate.getClientRects().length) {
           continue;
         }
 
-        const text = normalizeTitleText(candidate.innerText || candidate.textContent);
+        const text = normalizeTitleText(candidate.getAttribute("data-title") || candidate.innerText || candidate.textContent);
         if (text && text.length <= 100 && !isIgnoredTitle(candidate, text)) {
           return text;
         }
@@ -205,11 +211,7 @@
   }
 
   function isIgnoredTitle(candidate, text) {
-    if (candidate.matches(".newKpi2.col .title, .newKpi2.col .title span.text-blue, .text-blue")) {
-      return true;
-    }
-
-    return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(text);
+    return candidate.matches(".text-blue") || /^(?:\d{1,3}\.){3}\d{1,3}$/.test(text);
   }
 
   function normalizeTitleText(value) {

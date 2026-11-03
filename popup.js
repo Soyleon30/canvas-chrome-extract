@@ -4,6 +4,7 @@ const pageInfoEl = document.getElementById("pageInfo");
 const canvasListEl = document.getElementById("canvasList");
 const refreshButton = document.getElementById("refreshButton");
 const downloadAllButton = document.getElementById("downloadAllButton");
+const downloadFolderButton = document.getElementById("downloadFolderButton");
 const copyReportButton = document.getElementById("copyReportButton");
 const backgroundColorInput = document.getElementById("backgroundColorInput");
 const backgroundColorText = document.getElementById("backgroundColorText");
@@ -23,11 +24,18 @@ let currentFilenameSelectors = ".newKpi2.col .title span.text-blue";
 let isFilenamePrefixEnabled = true;
 let zoomRequestId = 0;
 let zoomTimer = null;
+let isDirectoryExporting = false;
+const supportsDirectoryExport = typeof window.showDirectoryPicker === "function";
+
+if (!supportsDirectoryExport) {
+  downloadFolderButton.title = "当前浏览器不支持直接写入文件夹，请关闭浏览器的下载前询问设置";
+}
 
 document.addEventListener("DOMContentLoaded", scanCurrentTab);
 appTitle.addEventListener("dblclick", toggleReportButton);
 refreshButton.addEventListener("click", scanCurrentTab);
 downloadAllButton.addEventListener("click", downloadAll);
+downloadFolderButton.addEventListener("click", downloadAllToFolder);
 copyReportButton.addEventListener("click", copyReport);
 document.querySelectorAll("input[name='backgroundMode']").forEach((input) => {
   input.addEventListener("change", scanCurrentTab);
@@ -54,6 +62,7 @@ function scanCurrentTab() {
   canvasListEl.textContent = "";
   currentCanvases = [];
   downloadAllButton.disabled = true;
+  downloadFolderButton.disabled = true;
   copyReportButton.disabled = true;
 
   queryCurrentTab((error, tab) => {
@@ -219,6 +228,7 @@ function renderCanvases() {
   const downloadable = currentCanvases.filter((item) => item.exportable);
   setStatus(`找到 ${currentCanvases.length} 个 canvas，其中 ${downloadable.length} 个可导出。`);
   downloadAllButton.disabled = downloadable.length === 0;
+  downloadFolderButton.disabled = downloadable.length === 0 || !supportsDirectoryExport;
   copyReportButton.disabled = false;
 
   for (const item of currentCanvases) {
@@ -267,6 +277,149 @@ async function downloadAll() {
   for (const item of items) {
     await downloadCanvas(item, false);
   }
+}
+
+async function downloadAllToFolder() {
+  if (isDirectoryExporting) {
+    return;
+  }
+
+  const items = currentCanvases.filter((item) => item.exportable);
+  if (!items.length) {
+    return;
+  }
+
+  if (!supportsDirectoryExport) {
+    setStatus("当前浏览器不支持直接写入文件夹，请关闭浏览器的下载前询问设置。", true);
+    return;
+  }
+
+  isDirectoryExporting = true;
+  hideZoom();
+  const controls = Array.from(document.querySelectorAll("button, input"));
+  const controlStates = controls.map((control) => control.disabled);
+  controls.forEach((control) => { control.disabled = true; });
+
+  let directoryHandle;
+  let exportedCount = 0;
+  try {
+    // Request the directory during the click gesture, before exporting images.
+    directoryHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      const dataUrl = await exportFullCanvasPromise(item);
+      setStatus(`正在导出到文件夹：${index + 1}/${items.length} ${item.name}`);
+      await writeDataUrlToDirectory(directoryHandle, makeFilename(item), dataUrl);
+      exportedCount += 1;
+    }
+    setStatus(`已导出 ${items.length} 张独立 PNG 到所选文件夹。`);
+  } catch (error) {
+    if (!directoryHandle && error && error.name === "AbortError") {
+      setStatus("已取消文件夹导出。");
+    } else {
+      setStatus(`文件夹导出失败（已保存 ${exportedCount}/${items.length} 张）：${error.message}`, true);
+    }
+  } finally {
+    isDirectoryExporting = false;
+    controls.forEach((control, index) => { control.disabled = controlStates[index]; });
+    updateBulkActionState();
+  }
+}
+
+async function writeDataUrlToDirectory(rootDirectory, relativePath, dataUrl) {
+  const pathParts = String(relativePath || "canvas.png").split("/").filter(Boolean);
+  const requestedFilename = pathParts.pop() || "canvas.png";
+  let directory = rootDirectory;
+
+  for (const part of pathParts) {
+    directory = await directory.getDirectoryHandle(part, { create: true });
+  }
+
+  const filename = await getAvailableFilename(directory, requestedFilename);
+  const fileHandle = await directory.getFileHandle(filename, { create: true });
+  const writable = await fileHandle.createWritable();
+
+  try {
+    await writable.write(dataUrlToBlob(dataUrl));
+    await writable.close();
+  } catch (error) {
+    try {
+      if (typeof writable.abort === "function") {
+        await writable.abort();
+      }
+    } catch (_) {
+      // Preserve the original write error.
+    }
+    throw error;
+  }
+}
+
+async function getAvailableFilename(directory, filename) {
+  const dotIndex = filename.lastIndexOf(".");
+  const stem = dotIndex > 0 ? filename.slice(0, dotIndex) : filename;
+  const extension = dotIndex > 0 ? filename.slice(dotIndex) : "";
+
+  for (let index = 0; index < 1000; index += 1) {
+    const candidate = index === 0 ? filename : `${stem} (${index})${extension}`;
+    try {
+      await directory.getFileHandle(candidate);
+    } catch (error) {
+      if (error && error.name === "NotFoundError") {
+        return candidate;
+      }
+      if (!error || error.name !== "TypeMismatchError") {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error("同名文件过多，无法生成新文件名");
+}
+
+function dataUrlToBlob(dataUrl) {
+  const separatorIndex = String(dataUrl).indexOf(",");
+  if (separatorIndex < 0) {
+    throw new Error("PNG 数据格式无效");
+  }
+
+  const metadata = dataUrl.slice(0, separatorIndex);
+  const payload = dataUrl.slice(separatorIndex + 1);
+  const mimeMatch = metadata.match(/^data:([^;,]+)/i);
+  const type = mimeMatch ? mimeMatch[1] : "image/png";
+
+  if (!/;base64/i.test(metadata)) {
+    return new Blob([decodeURIComponent(payload)], { type });
+  }
+
+  const parts = [];
+  const chunkSize = 65536;
+  for (let offset = 0; offset < payload.length; offset += chunkSize) {
+    const binary = atob(payload.slice(offset, offset + chunkSize));
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    parts.push(bytes);
+  }
+  return new Blob(parts, { type });
+}
+
+function updateBulkActionState() {
+  const hasDownloadableCanvas = currentCanvases.some((item) => item.exportable);
+  downloadAllButton.disabled = !hasDownloadableCanvas;
+  downloadFolderButton.disabled = !hasDownloadableCanvas || !supportsDirectoryExport;
+}
+
+function exportFullCanvasPromise(item) {
+  return new Promise((resolve, reject) => {
+    exportFullCanvas(item, (error, dataUrl) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(dataUrl);
+    });
+  });
 }
 
 function downloadCanvas(item, showDone = true) {
@@ -349,7 +502,7 @@ function exportFullCanvas(item, callback) {
 }
 
 function showZoom(item) {
-  if (!item.exportable) {
+  if (!item.exportable || isDirectoryExporting) {
     return;
   }
 
